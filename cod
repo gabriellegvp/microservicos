@@ -1,0 +1,17 @@
+@app.get("/users")
+def get_users():
+    return {"users": ["user1", "user2"]}
+
+@app.get("/products")
+def get_products():
+    return {"products": ["product1", "product2"]}
+
+import pika
+
+connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+channel = connection.channel()
+channel.queue_declare(queue='orders')
+
+def callback(ch, method, properties, body):
+    print("Order received: %r" % body)
+channel.basic_consume(queue='orders', on_message_callback=callback, auto_ack=True)
