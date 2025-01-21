@@ -1,0 +1,31 @@
+version: "3.8"
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  users_service:
+    build:
+      context: ./users_service
+    ports:
+      - "8001:8001"
+    depends_on:
+      - rabbitmq
+
+  products_service:
+    build:
+      context: ./products_service
+    ports:
+      - "8002:8002"
+    depends_on:
+      - rabbitmq
+
+  orders_service:
+    build:
+      context: ./orders_service
+    ports:
+      - "8003:8003"
+    depends_on:
+      - rabbitmq
