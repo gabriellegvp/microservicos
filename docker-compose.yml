@@ -1,31 +1,65 @@
 version: "3.8"
+
 services:
   rabbitmq:
     image: rabbitmq:3-management
+    container_name: rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5672:5672"       # Porta para comunicação entre serviços
+      - "15672:15672"     # Interface de gerenciamento
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - microservices_network
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
 
   users_service:
     build:
       context: ./users_service
+    container_name: users_service
     ports:
       - "8001:8001"
     depends_on:
       - rabbitmq
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+    networks:
+      - microservices_network
 
   products_service:
     build:
       context: ./products_service
+    container_name: products_service
     ports:
       - "8002:8002"
     depends_on:
       - rabbitmq
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+    networks:
+      - microservices_network
 
   orders_service:
     build:
       context: ./orders_service
+    container_name: orders_service
     ports:
       - "8003:8003"
     depends_on:
       - rabbitmq
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+    networks:
+      - microservices_network
+
+networks:
+  microservices_network:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
