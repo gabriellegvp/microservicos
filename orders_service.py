@@ -15,3 +15,9 @@ def create_order(order: dict):
 @app.get("/orders")
 def get_orders():
     return {"orders": "Endpoint for retrieving orders"}
+
+FROM python:3.9-slim
+WORKDIR /app
+COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
+CMD ["uvicorn", "users_service:app", "--host", "0.0.0.0", "--port", "8001"]
