@@ -1,20 +1,20 @@
 from fastapi import FastAPI
 import pika
+import os
 
 app = FastAPI()
 
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
+
 @app.post("/orders")
 def create_order(order: dict):
-    connection = pika.BlockingConnection(pika.ConnectionParameters("rabbitmq"))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT))
     channel = connection.channel()
     channel.queue_declare(queue="orders")
     channel.basic_publish(exchange="", routing_key="orders", body=str(order))
     connection.close()
     return {"message": "Order sent to queue", "order": order}
-
-@app.get("/orders")
-def get_orders():
-    return {"orders": "Endpoint for retrieving orders"}
 
 FROM python:3.9-slim
 WORKDIR /app
