@@ -5,15 +5,21 @@ services:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"       # Porta para comunicação entre serviços
-      - "15672:15672"     # Interface de gerenciamento
+      - "5672:5672"       # Porta para comunicação AMQP
+      - "15672:15672"     # Interface de gerenciamento RabbitMQ
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}  # Permite sobrescrever via variável de ambiente
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
     networks:
       - microservices_network
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped  # Reinicia automaticamente, exceto se parado manualmente
 
   users_service:
     build:
@@ -22,12 +28,16 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy  # Espera o RabbitMQ estar saudável
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
     networks:
       - microservices_network
+    restart: unless-stopped
 
   products_service:
     build:
@@ -36,12 +46,16 @@ services:
     ports:
       - "8002:8002"
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
     networks:
       - microservices_network
+    restart: unless-stopped
 
   orders_service:
     build:
@@ -50,12 +64,16 @@ services:
     ports:
       - "8003:8003"
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
     networks:
       - microservices_network
+    restart: unless-stopped
 
 networks:
   microservices_network:
