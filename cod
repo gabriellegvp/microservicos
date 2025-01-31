@@ -1,17 +1,156 @@
-@app.get("/users")
-def get_users():
-    return {"users": ["user1", "user2"]}
-
-@app.get("/products")
-def get_products():
-    return {"products": ["product1", "product2"]}
-
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel
 import pika
+import logging
+import os
+import json
+from typing import List
 
-connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-channel = connection.channel()
-channel.queue_declare(queue='orders')
+# Configuração do logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def callback(ch, method, properties, body):
-    print("Order received: %r" % body)
-channel.basic_consume(queue='orders', on_message_callback=callback, auto_ack=True)
+app = FastAPI()
+
+# Configurações do RabbitMQ
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+
+# Modelos Pydantic para validação de dados
+class User(BaseModel):
+    id: int
+    name: str
+    email: str
+
+class Product(BaseModel):
+    id: int
+    name: str
+    price: float
+
+class Order(BaseModel):
+    id: int
+    user_id: int
+    product_id: int
+    quantity: int
+
+# Dados em memória (simulando um banco de dados)
+users_db = [
+    User(id=1, name="user1", email="user1@example.com"),
+    User(id=2, name="user2", email="user2@example.com"),
+]
+
+products_db = [
+    Product(id=1, name="product1", price=10.99),
+    Product(id=2, name="product2", price=20.99),
+]
+
+orders_db = []
+
+# Função para conectar ao RabbitMQ
+def connect_to_rabbitmq():
+    try:
+        credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(
+                host=RABBITMQ_HOST,
+                port=RABBITMQ_PORT,
+                credentials=credentials,
+            )
+        )
+        channel = connection.channel()
+        channel.queue_declare(queue="orders", durable=True)  # Fila durável
+        logger.info("Connected to RabbitMQ")
+        return connection, channel
+    except Exception as e:
+        logger.error(f"Failed to connect to RabbitMQ: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RabbitMQ service is unavailable",
+        )
+
+# Função para publicar mensagens no RabbitMQ
+def publish_order(order: Order):
+    connection, channel = connect_to_rabbitmq()
+    try:
+        channel.basic_publish(
+            exchange="",
+            routing_key="orders",
+            body=order.json(),
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # Torna a mensagem persistente
+            ),
+        )
+        logger.info(f"Order published: {order.json()}")
+    except Exception as e:
+        logger.error(f"Failed to publish order: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to publish order to RabbitMQ",
+        )
+    finally:
+        if connection and not connection.is_closed:
+            connection.close()
+
+# Função para consumir mensagens do RabbitMQ
+def consume_orders():
+    connection, channel = connect_to_rabbitmq()
+    try:
+        def callback(ch, method, properties, body):
+            try:
+                order_data = json.loads(body)
+                order = Order(**order_data)
+                orders_db.append(order)
+                logger.info(f"Order processed: {order}")
+            except Exception as e:
+                logger.error(f"Failed to process order: {str(e)}")
+
+        channel.basic_consume(queue="orders", on_message_callback=callback, auto_ack=True)
+        logger.info("Waiting for orders...")
+        channel.start_consuming()
+    except Exception as e:
+        logger.error(f"Failed to consume orders: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to consume orders from RabbitMQ",
+        )
+    finally:
+        if connection and not connection.is_closed:
+            connection.close()
+
+# Endpoints FastAPI
+@app.get("/users", response_model=List[User])
+def get_users():
+    return users_db
+
+@app.get("/products", response_model=List[Product])
+def get_products():
+    return products_db
+
+@app.post("/orders", status_code=status.HTTP_201_CREATED)
+def create_order(order: Order):
+    # Verifica se o usuário e o produto existem
+    user_exists = any(user.id == order.user_id for user in users_db)
+    product_exists = any(product.id == order.product_id for product in products_db)
+
+    if not user_exists or not product_exists:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User or product does not exist",
+        )
+
+    # Publica o pedido no RabbitMQ
+    publish_order(order)
+    return {"message": "Order received and being processed", "order": order}
+
+@app.get("/orders", response_model=List[Order])
+def get_orders():
+    return orders_db
+
+# Inicia o consumidor de pedidos em segundo plano (opcional)
+if __name__ == "__main__":
+    import threading
+    threading.Thread(target=consume_orders, daemon=True).start()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
