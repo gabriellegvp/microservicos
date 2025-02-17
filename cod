@@ -1,16 +1,22 @@
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, status, Query
+from pydantic import BaseModel, Field
+from typing import List, Optional
 import pika
 import logging
 import os
 import json
-from typing import List
+from uuid import uuid4
+from threading import Thread
 
 # Configuração do logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(
+    title="Order Management API",
+    description="API para gerenciamento de pedidos com integração ao RabbitMQ",
+    version="1.0.0",
+)
 
 # Configurações do RabbitMQ
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
@@ -20,20 +26,20 @@ RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
 
 # Modelos Pydantic para validação de dados
 class User(BaseModel):
-    id: int
-    name: str
-    email: str
+    id: int = Field(..., description="ID do usuário")
+    name: str = Field(..., min_length=1, max_length=100, description="Nome do usuário")
+    email: str = Field(..., regex=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email do usuário")
 
 class Product(BaseModel):
-    id: int
-    name: str
-    price: float
+    id: int = Field(..., description="ID do produto")
+    name: str = Field(..., min_length=1, max_length=100, description="Nome do produto")
+    price: float = Field(..., gt=0, description="Preço do produto")
 
 class Order(BaseModel):
-    id: int
-    user_id: int
-    product_id: int
-    quantity: int
+    id: str = Field(default_factory=lambda: str(uuid4()), description="ID único do pedido")
+    user_id: int = Field(..., description="ID do usuário")
+    product_id: int = Field(..., description="ID do produto")
+    quantity: int = Field(..., gt=0, description="Quantidade do produto")
 
 # Dados em memória (simulando um banco de dados)
 users_db = [
@@ -148,9 +154,15 @@ def create_order(order: Order):
 def get_orders():
     return orders_db
 
-# Inicia o consumidor de pedidos em segundo plano (opcional)
+# Inicia o consumidor de pedidos em segundo plano
+def start_consumer():
+    try:
+        consume_orders()
+    except Exception as e:
+        logger.error(f"Consumer failed: {str(e)}")
+
 if __name__ == "__main__":
-    import threading
-    threading.Thread(target=consume_orders, daemon=True).start()
+    consumer_thread = Thread(target=start_consumer, daemon=True)
+    consumer_thread.start()
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
