@@ -8,8 +8,9 @@ services:
       - "5672:5672"       # Porta para comunicação AMQP
       - "15672:15672"     # Interface de gerenciamento RabbitMQ
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}  # Permite sobrescrever via variável de ambiente
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}  # Permite sobrescrever via variável de ambiente
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_DEFAULT_VHOST: /microservices
     networks:
       - microservices_network
     volumes:
@@ -33,11 +34,17 @@ services:
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_VHOST: /microservices
     networks:
       - microservices_network
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   products_service:
     build:
@@ -51,11 +58,17 @@ services:
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_VHOST: /microservices
     networks:
       - microservices_network
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   orders_service:
     build:
@@ -69,8 +82,75 @@ services:
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_VHOST: /microservices
+    networks:
+      - microservices_network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres_db:
+    image: postgres:13
+    container_name: postgres_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      POSTGRES_DB: microservices_db
+    networks:
+      - microservices_network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  redis:
+    image: redis:6
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - microservices_network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - microservices_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+    volumes:
+      - grafana_data:/var/lib/grafana
     networks:
       - microservices_network
     restart: unless-stopped
@@ -81,3 +161,6 @@ networks:
 
 volumes:
   rabbitmq_data:
+  postgres_data:
+  redis_data:
+  grafana_data:
